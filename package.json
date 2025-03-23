@@ -1,0 +1,21 @@
+{
+  "name": "meet_up",
+  "version": "1.0.0",
+  "description": "video call and chat app",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "nodemon app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "C:\\Users\\snghs\\OneDrive\\Desktop\\Meet_up\\Meet_up"
+  },
+  "author": "Sudhir",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2",
+    "nodemon": "^3.1.9",
+    "socket.io": "^4.8.1"
+  }
+}
