@@ -1,8 +1,44 @@
 import * as store from "./store.js";
-
+import * as wss from "./wss.js";
+import * as webRTCHandler from "./webRTCHandler.js";
+import * as constants from "./constants.js";
+//initialization of socketIO connection
 const socket = io("/");
+wss.registerSocketEvents(socket);
 
-socket.on("connect", () => {
-  console.log("successfully connected");
-  store.setSocketId(socket.id);
+//register eventlistner for personal code copy button
+const presonalCodeCopyButton = document.getElementById(
+  "personal_code_copy_button"
+);
+presonalCodeCopyButton.addEventListener("click", () => {
+  const presonalCode = store.getState().socketId;
+  navigator.clipboard && navigator.clipboard.writeText(presonalCode);
+});
+
+//register event listners for connection buttons
+
+const personalCodeChatButton = document.getElementById(
+  "personal_code_chat_button"
+);
+const personalCodeVideoButton = document.getElementById(
+  "personal_code_video_button"
+);
+
+personalCodeChatButton.addEventListener("click", () => {
+  console.log("chat button clicked");
+
+  const calleePersonalCode = document.getElementById(
+    "personal_code_input"
+  ).value;
+  const callType = constants.callType.CHAT_PERSONAL_CODE;
+  webRTCHandler.sendPreOffer(callType, calleePersonalCode);
+});
+personalCodeVideoButton.addEventListener("click", () => {
+  console.log("video button clicked");
+  const calleePersonalCode = document.getElementById(
+    "personal_code_input"
+  ).value;
+  const callType = constants.callType.VIDEO_PERSONAL_CODE;
+
+  webRTCHandler.sendPreOffer(callType, calleePersonalCode);
 });
