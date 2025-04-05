@@ -2,16 +2,17 @@ let state = {
   socketId: null,
   localStream: null,
   remoteStream: null,
+  screenSharingActive: false,
   screenSharingStream: null,
   allowConnectionsFromStrangers: false,
-  screenSharingActive: false,
 };
+
 export const setSocketId = (socketId) => {
   state = {
     ...state,
-    // socketId:socketId,
     socketId,
   };
+  console.log(state);
 };
 
 export const setLocalStream = (stream) => {
@@ -21,12 +22,13 @@ export const setLocalStream = (stream) => {
   };
 };
 
-export const setAllowConnectionFromStrangers = (allowConnection) => {
+export const setAllowConnectionsFromStrangers = (allowConnection) => {
   state = {
     ...state,
     allowConnectionsFromStrangers: allowConnection,
   };
 };
+
 export const setScreenSharingActive = (screenSharingActive) => {
   state = {
     ...state,
@@ -40,6 +42,7 @@ export const setScreenSharingStream = (stream) => {
     screenSharingStream: stream,
   };
 };
+
 export const setRemoteStream = (stream) => {
   state = {
     ...state,
