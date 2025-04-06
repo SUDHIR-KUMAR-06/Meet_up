@@ -14,6 +14,6 @@ export const preOfferAnswer = {
 
 export const webRTCSignaling = {
   OFFER: "OFFER",
-  ANSWER: "ANNSWER",
+  ANSWER: "ANSWER",
   ICE_CANDIDATE: "ICE_CANDIDATE",
 };
