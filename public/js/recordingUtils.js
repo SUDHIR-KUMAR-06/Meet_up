@@ -1,55 +1,54 @@
-let state = {
-  socketId: null,
-  localStream: null,
-  remoteStream: null,
-  screenSharingActive: false,
-  screenSharingStream: null,
-  allowConnectionsFromStrangers: false,
+import * as store from "./store.js";
+
+let mediaRecorder;
+
+const vp9Codec = "video/webm; codecs=vp=9";
+const vp9Options = { mimeType: vp9Codec };
+const recordedChunks = [];
+
+export const startRecording = () => {
+  const remoteStream = store.getState().remoteStream;
+
+  if (MediaRecorder.isTypeSupported(vp9Codec)) {
+    mediaRecorder = new MediaRecorder(remoteStream, vp9Options);
+  } else {
+    mediaRecorder = new MediaRecorder(remoteStream);
+  }
+
+  mediaRecorder.ondataavailable = handleDataAvailable;
+  mediaRecorder.start();
 };
 
-export const setSocketId = (socketId) => {
-  state = {
-    ...state,
-    socketId,
-  };
-  console.log(state);
+export const pauseRecording = () => {
+  mediaRecorder.pause();
 };
 
-export const setLocalStream = (stream) => {
-  state = {
-    ...state,
-    localStream: stream,
-  };
+export const resumeRecording = () => {
+  mediaRecorder.resume();
 };
 
-export const setAllowConnectionsFromStrangers = (allowConnection) => {
-  state = {
-    ...state,
-    allowConnectionsFromStrangers: allowConnection,
-  };
+export const stopRecording = () => {
+  mediaRecorder.stop();
 };
 
-export const setScreenSharingActive = (screenSharingActive) => {
-  state = {
-    ...state,
-    screenSharingActive,
-  };
+const downloadRecordedVideo = () => {
+  const blob = new Blob(recordedChunks, {
+    type: "video/webm",
+  });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  document.body.appendChild(a);
+  a.style = "display: none;";
+  a.href = url;
+  a.download = "recording.webm";
+  a.click();
+  window.URL.revokeObjectURL(url);
 };
 
-export const setScreenSharingStream = (stream) => {
-  state = {
-    ...state,
-    screenSharingStream: stream,
-  };
-};
-
-export const setRemoteStream = (stream) => {
-  state = {
-    ...state,
-    remoteStream: stream,
-  };
-};
-
-export const getState = () => {
-  return state;
+const handleDataAvailable = (event) => {
+  if (event.data.size > 0) {
+    recordedChunks.push(event.data);
+    downloadRecordedVideo();
+  }
 };
