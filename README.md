@@ -51,3 +51,22 @@ Make sure you have the following installed:
    git clone https://github.com/SUDHIR-KUMAR-06/Meet_up.git
    cd video-chat-app
    ```
+
+---
+
+### 🔧 Configurations
+
+1. **If you're using your own STUN/TURN server, you can configure it in the WebRTC connection setup:**
+
+```
+const iceServers = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' }, // Public STUN
+    {
+      urls: 'turn:your-turn-server.com:3478',
+      username: 'your-username',
+      credential: 'your-credential'
+    }
+  ]
+};
+```
