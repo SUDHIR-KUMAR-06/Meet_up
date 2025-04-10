@@ -1,7 +1,8 @@
+import * as constants from "./constants.js";
 import * as store from "./store.js";
 import * as ui from "./ui.js";
 import * as webRTCHandler from "./webRTCHandler.js";
-import * as constants from "./constants.js";
+import * as strangerUtils from "./strangerUtils.js";
 
 let socketIO = null;
 
@@ -9,7 +10,6 @@ export const registerSocketEvents = (socket) => {
   socketIO = socket;
 
   socket.on("connect", () => {
-    console.log("succesfully connected to socket.io server");
     store.setSocketId(socket.id);
     ui.updatePersonalCode(socket.id);
   });
@@ -41,10 +41,14 @@ export const registerSocketEvents = (socket) => {
         return;
     }
   });
+
+  socket.on("stranger-socket-id", (data) => {
+    const { randomStrangerSocketId } = data;
+    strangerUtils.connectWithStranger(randomStrangerSocketId);
+  });
 };
 
 export const sendPreOffer = (data) => {
-  console.log("emmiting to server pre offer event");
   socketIO.emit("pre-offer", data);
 };
 
@@ -56,6 +60,14 @@ export const sendDataUsingWebRTCSignaling = (data) => {
   socketIO.emit("webRTC-signaling", data);
 };
 
-export const sendUserHangedUp = (data) => {
+export const sendUserHangUp = (data) => {
   socketIO.emit("user-hanged-up", data);
+};
+
+export const changeStrangerConnectionStatus = (data) => {
+  socketIO.emit("stranger-connection-status", data);
+};
+
+export const getStrangerSocketId = () => {
+  socketIO.emit("get-stranger-socket-id");
 };

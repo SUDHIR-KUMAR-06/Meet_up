@@ -4,69 +4,64 @@ import * as ui from "./ui.js";
 import * as store from "./store.js";
 
 let connectedUserDetails;
-let peerConection;
+let peerConnection;
 let dataChannel;
 
-const defaultConstraints = {
+const defaultConstrains = {
   audio: true,
   video: true,
 };
 
 const configuration = {
   iceServers: [
-    {
-      urls: "stun:stun.l.google.com:13902",
-    },
+    { urls: ["stun:stun.l.google.com:13902", "stun:stun1.l.google.com:13902"] },
   ],
 };
 
 export const getLocalPreview = () => {
-  navigator.mediaDevices
-    .getUserMedia(defaultConstraints)
-    .then((stream) => {
-      ui.updateLocalVideo(stream);
-      store.setLocalStream(stream);
-    })
-    .catch((err) => {
-      console.log("error occured when trying to get an access to camera");
-      console.log(err);
-    });
+  if (navigator?.mediaDevices) {
+    navigator.mediaDevices
+      .getUserMedia(defaultConstrains)
+      .then((stream) => {
+        store.setCallState(constants.callState.CALL_AVAILABLE);
+        store.setLocalStream(stream);
+        ui.showVideoCallButtons();
+        ui.updateLocalVideo(stream);
+      })
+      .catch((err) => console.error(err));
+  }
 };
 
 const createPeerConnection = () => {
-  peerConection = new RTCPeerConnection(configuration);
+  peerConnection = new RTCPeerConnection(configuration);
 
-  dataChannel = peerConection.createDataChannel("chat");
+  dataChannel = peerConnection.createDataChannel("chat");
 
-  peerConection.ondatachannel = (event) => {
-    const dataChannel = event.channel;
+  peerConnection.ondatachannel = (event) => {
+    event.channel.addEventListener("open", () => {
+      // console.log("datachannel ready to receive data");
+    });
 
-    dataChannel.onopen = () => {
-      console.log("peer connection is ready to receive data channel messages");
-    };
-
-    dataChannel.onmessage = (event) => {
-      console.log("message came from data channel");
+    event.channel.addEventListener("message", (event) => {
       const message = JSON.parse(event.data);
       ui.appendMessage(message);
-    };
+    });
   };
 
-  peerConection.onicecandidate = (event) => {
-    console.log("geeting ice candidates from stun server");
+  peerConnection.onicecandidate = (event) => {
     if (event.candidate) {
       // send our ice candidates to other peer
       wss.sendDataUsingWebRTCSignaling({
-        connectedUserSocketId: connectedUserDetails.socketId,
+        socketId: connectedUserDetails.socketId,
         type: constants.webRTCSignaling.ICE_CANDIDATE,
         candidate: event.candidate,
       });
     }
   };
 
-  peerConection.onconnectionstatechange = (event) => {
-    if (peerConection.connectionState === "connected") {
-      console.log("succesfully connected with other peer");
+  peerConnection.onconnectionstatechange = (event) => {
+    if (peerConnection.connectionState === "connected") {
+      // console.log("successfully connected to other peer");
     }
   };
 
@@ -75,19 +70,19 @@ const createPeerConnection = () => {
   store.setRemoteStream(remoteStream);
   ui.updateRemoteVideo(remoteStream);
 
-  peerConection.ontrack = (event) => {
+  peerConnection.ontrack = (event) => {
     remoteStream.addTrack(event.track);
   };
 
   // add our stream to peer connection
-
   if (
-    connectedUserDetails.callType === constants.callType.VIDEO_PERSONAL_CODE
+    connectedUserDetails.callType === constants.callType.VIDEO_PERSONAL_CODE ||
+    connectedUserDetails.callType === constants.callType.VIDEO_STRANGER
   ) {
     const localStream = store.getState().localStream;
 
-    for (const track of localStream.getTracks()) {
-      peerConection.addTrack(track, localStream);
+    for (let track of localStream.getTracks()) {
+      peerConnection.addTrack(track, localStream);
     }
   }
 };
@@ -97,199 +92,186 @@ export const sendMessageUsingDataChannel = (message) => {
   dataChannel.send(stringifiedMessage);
 };
 
+const callingDialogRejectCallHandler = () => {
+  const data = {
+    socketId: connectedUserDetails.socketId,
+  };
+  closePeerConnectionAndResetState();
+  wss.sendUserHangUp(data);
+};
+
 export const sendPreOffer = (callType, calleePersonalCode) => {
   connectedUserDetails = {
     callType,
     socketId: calleePersonalCode,
   };
 
-  if (
-    callType === constants.callType.CHAT_PERSONAL_CODE ||
-    callType === constants.callType.VIDEO_PERSONAL_CODE
-  ) {
-    const data = {
-      callType,
-      calleePersonalCode,
-    };
-    ui.showCallingDialog(callingDialogRejectCallHandler);
-    wss.sendPreOffer(data);
-  }
-};
-
-export const handlePreOffer = (data) => {
-  const { callType, callerSocketId } = data;
-
-  connectedUserDetails = {
-    socketId: callerSocketId,
+  const data = {
     callType,
+    calleePersonalCode,
   };
 
-  if (
-    callType === constants.callType.CHAT_PERSONAL_CODE ||
-    callType === constants.callType.VIDEO_PERSONAL_CODE
-  ) {
-    console.log("showing call dialog");
-    ui.showIncomingCallDialog(callType, acceptCallHandler, rejectCallHandler);
-  }
+  ui.showCallingDialog(callingDialogRejectCallHandler);
+  store.setCallState(constants.callState.CALL_UNAVAILABLE);
+  wss.sendPreOffer(data);
+};
+
+const sendPreOfferAnswer = (answer, callerSocketId = null) => {
+  const socketId = callerSocketId
+    ? callerSocketId
+    : connectedUserDetails.socketId;
+
+  const data = {
+    callerSocketId: socketId,
+    preOfferAnswer: answer,
+  };
+  ui.removeAllDialogs();
+  wss.sendPreOfferAnswer(data);
 };
 
 const acceptCallHandler = () => {
-  console.log("call accepted");
   createPeerConnection();
   sendPreOfferAnswer(constants.preOfferAnswer.CALL_ACCEPTED);
   ui.showCallElements(connectedUserDetails.callType);
 };
 
 const rejectCallHandler = () => {
-  console.log("call rejected");
-  sendPreOfferAnswer();
+  setIncomingCallsAvailable();
   sendPreOfferAnswer(constants.preOfferAnswer.CALL_REJECTED);
 };
 
-const callingDialogRejectCallHandler = () => {
-  console.log("rejecting the call");
-};
+export const handlePreOffer = (data) => {
+  const { callType, callerSocketId } = data;
 
-const sendPreOfferAnswer = (preOfferAnswer) => {
-  const data = {
-    callerSocketId: connectedUserDetails.socketId,
-    preOfferAnswer,
+  if (!checkCallPosibility(callType)) {
+    return sendPreOfferAnswer(
+      constants.preOfferAnswer.CALL_UNAVAILABLE,
+      callerSocketId
+    );
+  }
+
+  connectedUserDetails = {
+    callType,
+    socketId: callerSocketId,
   };
-  ui.removeAllDialogs();
-  wss.sendPreOfferAnswer(data);
+
+  store.setCallState(constants.callState.CALL_UNAVAILABLE);
+  ui.showIncomingCallDialog(callType, acceptCallHandler, rejectCallHandler);
 };
 
-export const handlePreOfferAnswer = (data) => {
+export const handlePreOfferAnswer = async (data) => {
   const { preOfferAnswer } = data;
 
   ui.removeAllDialogs();
 
   if (preOfferAnswer === constants.preOfferAnswer.CALLEE_NOT_FOUND) {
-    ui.showInfoDialog(preOfferAnswer);
     // show dialog that callee has not been found
-  }
-
-  if (preOfferAnswer === constants.preOfferAnswer.CALL_UNAVAILABLE) {
     ui.showInfoDialog(preOfferAnswer);
-    // show dialog that callee is not able to connect
-  }
-
-  if (preOfferAnswer === constants.preOfferAnswer.CALL_REJECTED) {
+    setIncomingCallsAvailable();
+  } else if (preOfferAnswer === constants.preOfferAnswer.CALL_UNAVAILABLE) {
+    // show dialog that calle is not able to connect
     ui.showInfoDialog(preOfferAnswer);
+    setIncomingCallsAvailable();
+  } else if (preOfferAnswer === constants.preOfferAnswer.CALL_REJECTED) {
     // show dialog that call is rejected by the callee
-  }
-
-  if (preOfferAnswer === constants.preOfferAnswer.CALL_ACCEPTED) {
+    ui.showInfoDialog(preOfferAnswer);
+    setIncomingCallsAvailable();
+  } else if (preOfferAnswer === constants.preOfferAnswer.CALL_ACCEPTED) {
+    // send webRTC offer
     ui.showCallElements(connectedUserDetails.callType);
     createPeerConnection();
-    sendWebRTCOffer();
+    await sendWebRTCOffer();
   }
 };
 
 const sendWebRTCOffer = async () => {
-  const offer = await peerConection.createOffer();
-  await peerConection.setLocalDescription(offer);
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
   wss.sendDataUsingWebRTCSignaling({
-    connectedUserSocketId: connectedUserDetails.socketId,
+    offer,
+    socketId: connectedUserDetails.socketId,
     type: constants.webRTCSignaling.OFFER,
-    offer: offer,
   });
 };
 
 export const handleWebRTCOffer = async (data) => {
-  await peerConection.setRemoteDescription(data.offer);
-  const answer = await peerConection.createAnswer();
-  await peerConection.setLocalDescription(answer);
+  await peerConnection.setRemoteDescription(data.offer);
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
   wss.sendDataUsingWebRTCSignaling({
-    connectedUserSocketId: connectedUserDetails.socketId,
+    answer,
+    socketId: connectedUserDetails.socketId,
     type: constants.webRTCSignaling.ANSWER,
-    answer: answer,
   });
 };
 
 export const handleWebRTCAnswer = async (data) => {
-  console.log("handling webRTC Answer");
-  await peerConection.setRemoteDescription(data.answer);
+  await peerConnection.setRemoteDescription(data.answer);
 };
 
 export const handleWebRTCCandidate = async (data) => {
-  console.log("handling incoming webRTC candidates");
   try {
-    await peerConection.addIceCandidate(data.candidate);
+    await peerConnection.addIceCandidate(data.candidate);
   } catch (err) {
     console.error(
-      "error occured when trying to add received ice candidate",
+      "error occured when trying to add received ICE CANDIDATE",
       err
     );
   }
 };
 
-let screenSharingStream;
-
 export const switchBetweenCameraAndScreenSharing = async (
   screenSharingActive
 ) => {
   if (screenSharingActive) {
+    // go back to video track
     const localStream = store.getState().localStream;
-    const senders = peerConection.getSenders();
-
-    const sender = senders.find((sender) => {
-      return sender.track.kind === localStream.getVideoTracks()[0].kind;
-    });
+    const videoTrack = localStream.getVideoTracks()[0];
+    const sender = peerConnection
+      .getSenders()
+      .find((sender) => sender.track.kind === videoTrack.kind);
 
     if (sender) {
-      sender.replaceTrack(localStream.getVideoTracks()[0]);
+      const screenSharingStrem = store.getState().screenSharingStream;
+      if (screenSharingStrem) {
+        screenSharingStrem.getTracks().forEach((track) => track.stop());
+      }
+
+      sender.replaceTrack(videoTrack);
+      store.setScreenSharingActive(!screenSharingActive);
+      ui.updateLocalVideo(localStream);
     }
+    return;
+  }
 
-    // stop screen sharing stream
-
-    store
-      .getState()
-      .screenSharingStream.getTracks()
-      .forEach((track) => track.stop());
-
-    store.setScreenSharingActive(!screenSharingActive);
-
-    ui.updateLocalVideo(localStream);
-  } else {
-    console.log("switching for screen sharing");
-    try {
-      screenSharingStream = await navigator.mediaDevices.getDisplayMedia({
+  try {
+    if (navigator?.mediaDevices) {
+      const screenSharingStream = await navigator.mediaDevices.getDisplayMedia({
         video: true,
       });
       store.setScreenSharingStream(screenSharingStream);
 
       // replace track which sender is sending
-      const senders = peerConection.getSenders();
-
-      const sender = senders.find((sender) => {
-        return (
-          sender.track.kind === screenSharingStream.getVideoTracks()[0].kind
-        );
-      });
+      const videoTrack = screenSharingStream.getVideoTracks()[0];
+      const sender = peerConnection
+        .getSenders()
+        .find((sender) => sender.track.kind === videoTrack.kind);
 
       if (sender) {
-        sender.replaceTrack(screenSharingStream.getVideoTracks()[0]);
+        sender.replaceTrack(videoTrack);
+        store.setScreenSharingActive(!screenSharingActive);
+        ui.updateLocalVideo(screenSharingStream);
       }
-
-      store.setScreenSharingActive(!screenSharingActive);
-
-      ui.updateLocalVideo(screenSharingStream);
-    } catch (err) {
-      console.error(
-        "error occured when trying to get screen sharing stream",
-        err
-      );
     }
+  } catch (err) {
+    console.error("error occured while sharing screen", err);
   }
 };
 
-//hangup
+// hang up
 export const handleHangUp = () => {
-  const data = {
-    connectedUserSocketId: connectedUserDetails.socketId,
-  };
-  wss.sendUserHangedUp(data);
+  const data = { socketId: connectedUserDetails.socketId };
+  wss.sendUserHangUp(data);
   closePeerConnectionAndResetState();
 };
 
@@ -297,21 +279,49 @@ export const handleConnectedUserHangedUp = () => {
   closePeerConnectionAndResetState();
 };
 
-const closePeerConnectionAndResetState = () => {
-  if (peerConection) {
-    peerConection.close();
-    peerConection = null;
+export const closePeerConnectionAndResetState = () => {
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
   }
 
-  //active mic and camera
+  // active mic and camera
   if (
     connectedUserDetails.callType === constants.callType.VIDEO_PERSONAL_CODE ||
     connectedUserDetails.callType === constants.callType.VIDEO_STRANGER
   ) {
-    store.getState().localStream.getVideoTracks()[0].enabled = true;
     store.getState().localStream.getAudioTracks()[0].enabled = true;
+    store.getState().localStream.getVideoTracks()[0].enabled = true;
+  }
 
-    ui.updateUIAfterHangUp(connectedUserDetails.callType);
-    connectedUserDetails = null;
+  ui.updateUIAfterHangUp(connectedUserDetails.callType);
+  setIncomingCallsAvailable();
+  connectedUserDetails = null;
+};
+
+export const checkCallPosibility = (callType) => {
+  const callState = store.getState().callState;
+
+  if (callState === constants.callState.CALL_AVAILABLE) {
+    return true;
+  }
+
+  if (
+    callState === constants.callState.CALL_AVAILABLE_ONLY_CHAT &&
+    (callType === constants.callType.CHAT_PERSONAL_CODE ||
+      callType === constants.callType.CHAT_STRANGER)
+  ) {
+    return true;
+  }
+
+  return false;
+};
+
+export const setIncomingCallsAvailable = () => {
+  const localStream = store.getState().localStream;
+  if (localStream) {
+    store.setCallState(constants.callState.CALL_AVAILABLE);
+  } else {
+    store.setCallState(constants.callState.CALL_AVAILABLE_ONLY_CHAT);
   }
 };
